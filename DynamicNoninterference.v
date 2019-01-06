@@ -2525,6 +2525,54 @@ Qed.
 
 
 
+(* Non indexed multi step relation *)
+Inductive steps_to : config -> config -> Prop :=
+  | steps_to_zero: forall c st lv,
+        steps_to〈 c, st, lv 〉 〈 c, st, lv 〉
+  | steps_to_multi: forall c c' c'' st st' st'' lv lv' lv'',
+       〈 c, st, lv 〉 ⇒ 〈 c', st', lv' 〉->
+       steps_to 〈 c', st', lv' 〉 〈 c'', st'', lv'' 〉 ->
+       steps_to 〈 c, st, lv 〉 〈 c'', st'', lv'' 〉.
+
+(* Conversion lemma between the indexed and non indexed step relation *)
+Lemma steps_to_same_as_step_times: forall c c' st st' lv lv',
+  steps_to 〈 c, st, lv 〉〈 c', st', lv'〉 <-> exists n, step_times 〈 c, st, lv 〉n〈 c', st', lv'〉.
+Proof.
+  split;
+  intros.
+  - induction H.
+    + exists 0.
+      constructor.
+    + destruct IHsteps_to.
+      exists (x+1).
+      apply step_multi with c'0 st'0 lv'0;
+      assumption.
+  - destruct H.
+    induction H.
+    + constructor.
+    + apply steps_to_multi with c'0 st'0 lv'0;
+      assumption.
+Qed.
+
+
+(* Noninterference for the nonindexed step relation *)
+Theorem step_noninterferrence: forall c st1 st1' st2 st2' lv lv1' lv2' k,
+  well_formed c (|lv| - k) ->
+  st1 ~~ st2 ->
+  steps_to 〈 c, st1, lv 〉 〈 STOP, st1', lv1' 〉 ->
+  steps_to 〈 c, st2, lv 〉 〈 STOP, st2', lv2' 〉 ->
+  st1' ~~ st2'.
+Proof.
+  intros.
+  apply steps_to_same_as_step_times in H1.
+  destruct H1.
+  apply steps_to_same_as_step_times in H2.
+  destruct H2.
+  eapply step_times_noninterference;
+  eassumption.
+Qed.
+
+
 
 
 
