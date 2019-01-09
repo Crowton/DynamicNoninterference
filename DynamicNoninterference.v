@@ -163,11 +163,11 @@ Reserved Notation "cfg '⇒' cfg'" (at level 40).
 Inductive step : config -> config -> Prop :=
   | step_skip : forall st lv,
       〈 SKIP, st, lv 〉 ⇒ 〈 STOP, st, lv 〉
-  | step_assign: forall x e v v' st st' lv l,
+  | step_assign: forall x e v v' st st' lv l l',
        eval e st v l ->
-       st x = (v', l) ->
-       l <> Public \/ stacklevel lv = Public ->
-       st' = st_update st x v l ->
+       st x = (v', l') ->
+       l' <> Public \/ (l = Public /\ stacklevel lv = Public) ->
+       st' = st_update st x v l' ->
       〈 x ::= e, st, lv 〉 ⇒  〈 STOP, st', lv〉
   | step_seq1 : forall c1 c2 st st' lv lv',
       〈 c1, st, lv 〉⇒ 〈 STOP, st', lv' 〉->
@@ -390,13 +390,13 @@ Proof.
       inversion H_c_join_free.
       apply well_formed_convertion.
       split.
-      * apply IHc1; repeat assumption.
+      * apply IHc1; assumption.
       * assumption.
     + inversion H_c_stop_free.
       inversion H_c_join_free.
       apply well_formed_convertion.
       split.
-      * apply IHc2; repeat assumption.
+      * apply IHc2; assumption.
       * assumption.
     + omega.
     + omega.
@@ -690,15 +690,14 @@ Inductive event_step : config -> event -> config -> Prop :=
   (* Assignments *)
   | event_step_assign_public: forall x e v v' st st' lv l,
        eval e st v l ->
-       st x = (v', l) ->
+       st x = (v', Public) ->
        l = Public /\ stacklevel lv = Public ->
-       st' = st_update st x v l ->
+       st' = st_update st x v Public ->
        event_step〈 x ::= e, st, lv 〉(AssignmentEvent x v)〈 STOP, st', lv〉
   | event_step_assign_secret: forall x e v v' st st' lv l,
        eval e st v l ->
-       st x = (v', l) ->
-       l <> Public ->
-       st' = st_update st x v l ->
+       st x = (v', Secret) ->
+       st' = st_update st x v Secret ->
        event_step〈 x ::= e, st, lv 〉EmptyEvent〈 STOP, st', lv〉
 
   (* Sequential *)
@@ -734,24 +733,21 @@ Proof.
     induction H.
     + exists EmptyEvent.
       constructor.
-    + destruct l.
+    + destruct l'.
       * inversion H1.
         contradiction.
         exists (AssignmentEvent x v).
+        destruct H3.
+        subst.
         apply event_step_assign_public with v' Public.
         assumption.
         assumption.
         split.
         trivial.
         assumption.
-        assumption.
+        trivial.
       * exists EmptyEvent.
-        apply event_step_assign_secret with v v' Secret.
-        assumption.
-        assumption.
-        unfold not.
-        intros.
-        inversion H3.
+        apply event_step_assign_secret with v v' l;
         assumption.
     + inversion IHstep.
       exists x.
@@ -776,18 +772,17 @@ Proof.
   - intro.
     inversion H.
     induction H0.
-    + apply step_assign with v v' l.
+    + apply step_assign with v v' l Public.
       assumption.
       assumption.
       right.
-      inversion H2.
       assumption.
       assumption.
-    + apply step_assign with v v' l.
+    + apply step_assign with v v' l Secret.
       assumption.
       assumption.
       left.
-      assumption.
+      discriminate.
       assumption.
     + constructor.
       apply IHevent_step.
@@ -1046,10 +1041,8 @@ Proof.
     + inversion H11.
       rewrite H2 in H.
       inversion H.
-    + destruct l.
-      * contradiction.
-      * apply memory_secret_update_agree with v'.
-        assumption.
+    + apply memory_secret_update_agree with v'.
+      assumption.
   - inversion H0;
     subst.
     + apply IHc1 with STOP lv lv' ev;
@@ -1076,20 +1069,8 @@ Proof.
     apply memory_self_agree.
   - inversion H.
     subst.
-    destruct l.
-    contradiction.
-    unfold memory_agree.
-    intros.
-    unfold st_update.
-    destruct (string_dec s x).
-    + split.
-      * intros.
-        subst.
-        rewrite H8 in H0.
-        inversion H0.
-      * intros.
-        inversion H0.
-    + split; intros; assumption.
+    apply memory_secret_update_agree with v'.
+    assumption.
   - inversion H;
     subst.
     + apply IHc1 with STOP lv lv'.
@@ -1719,12 +1700,8 @@ Proof.
       subst.
       unfold memory_agree in H2.
       specialize (H2 x v'0).
-      destruct H19.
-      subst.
-      destruct l.
-      contradiction.
-      apply H2 in H18.
-      rewrite H18 in H11.
+      apply H2 in H17.
+      rewrite H17 in H11.
       inversion H11.
     + inversion H17.
       subst.
@@ -1734,13 +1711,9 @@ Proof.
       subst.
       unfold memory_agree in H2.
       specialize (H2 x v').
-      destruct H15.
-      subst.
-      destruct l0.
-      contradiction.
       apply H2 in H14.
-      rewrite H14 in H25.
-      inversion H25.
+      rewrite H25 in H14.
+      inversion H14.
     + inversion H7.
       inversion H16.
       subst.
@@ -2459,7 +2432,7 @@ Qed.
    This thus gives us the final property; that the dynamic step semantics
    gives us noninterferrence.
    Made with definition to allow for strong induction *)
-Definition step_noninterference_id (n: nat) : Prop :=
+Definition step_times_noninterference_id (n: nat) : Prop :=
   forall m c st1 st1' st2 st2' lv lv1' lv2' k,
   well_formed c (|lv| - k) ->
   st1 ~~ st2 ->
@@ -2467,11 +2440,11 @@ Definition step_noninterference_id (n: nat) : Prop :=
   step_times 〈 c, st2, lv 〉 m 〈 STOP, st2', lv2' 〉 ->
   st1' ~~ st2'.
 
-Theorem step_noninterference: forall n,
-  step_noninterference_id (n).
+Theorem step_times_noninterference: forall n,
+  step_times_noninterference_id (n).
 Proof.
   apply strongind;
-  unfold step_noninterference_id;
+  unfold step_times_noninterference_id;
   intros.
   - inversion H1;
     subst.
@@ -2525,6 +2498,7 @@ Qed.
 
 
 
+
 (* Non indexed multi step relation *)
 Inductive steps_to : config -> config -> Prop :=
   | steps_to_zero: forall c st lv,
@@ -2571,6 +2545,11 @@ Proof.
   eapply step_times_noninterference;
   eassumption.
 Qed.
+
+
+
+
+
 
 
 
