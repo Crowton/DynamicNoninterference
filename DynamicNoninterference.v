@@ -2545,18 +2545,3 @@ Proof.
   eapply step_times_noninterference;
   eassumption.
 Qed.
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
